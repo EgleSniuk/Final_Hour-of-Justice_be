@@ -5,12 +5,21 @@ import Question from '../models/Question.js';
 import Answer from '../models/Answer.js';
 
 const router = express.Router();
+const ALLOWED_TOPICS = ['General', 'Investigation', 'Evidence', 'Courtroom', 'Media'];
 
 router.get('/questions', async (req, res) => {
   try {
-    const { status } = req.query;
+    const { status, topic } = req.query;
 
-    const questions = await Question.find()
+    const query = {};
+    if (typeof topic === 'string' && topic !== 'all') {
+      if (!ALLOWED_TOPICS.includes(topic)) {
+        return res.status(400).json({ message: 'Invalid topic filter' });
+      }
+      query.topic = topic;
+    }
+
+    const questions = await Question.find(query)
       .populate('user_id', 'name email')
       .sort({ createdAt: -1 })
       .lean();
@@ -26,6 +35,7 @@ router.get('/questions', async (req, res) => {
     const mapped = questions.map((question) => ({
       id: question._id,
       question_text: question.question_text,
+      topic: question.topic || 'General',
       date: question.createdAt,
       user_id: question.user_id?._id,
       user_name: question.user_id?.name,
@@ -47,20 +57,26 @@ router.get('/questions', async (req, res) => {
 
 router.post('/question', requireAuth, async (req, res) => {
   try {
-    const { question_text } = req.body;
+    const { question_text, topic } = req.body;
 
     if (!question_text || question_text.trim().length < 10) {
       return res.status(400).json({ message: 'Question must be at least 10 characters long' });
     }
 
+    if (topic && !ALLOWED_TOPICS.includes(topic)) {
+      return res.status(400).json({ message: 'Invalid topic' });
+    }
+
     const question = await Question.create({
       question_text: question_text.trim(),
+      topic: topic || 'General',
       user_id: req.user.id
     });
 
     return res.status(201).json({
       id: question._id,
       question_text: question.question_text,
+      topic: question.topic,
       date: question.createdAt,
       user_id: question.user_id
     });
@@ -211,14 +227,20 @@ router.post('/answer/:id/reaction', requireAuth, async (req, res) => {
     }
 
     const userId = req.user.id;
+    const hasLiked = answer.likes.some((entry) => entry.toString() === userId);
+    const hasDisliked = answer.dislikes.some((entry) => entry.toString() === userId);
 
     answer.likes = answer.likes.filter((entry) => entry.toString() !== userId);
     answer.dislikes = answer.dislikes.filter((entry) => entry.toString() !== userId);
 
     if (type === 'like') {
-      answer.likes.push(userId);
+      if (!hasLiked) {
+        answer.likes.push(userId);
+      }
     } else {
-      answer.dislikes.push(userId);
+      if (!hasDisliked) {
+        answer.dislikes.push(userId);
+      }
     }
 
     await answer.save();
