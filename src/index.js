@@ -51,6 +51,10 @@ app.get('/health', (_req, res) => {
 
 app.use(authRoutes);
 app.use(questionRoutes);
+app.use('/auth', authRoutes);
+app.use('/api', authRoutes);
+app.use('/api/auth', authRoutes);
+app.use('/api', questionRoutes);
 
 const port = process.env.PORT || 4000;
 
